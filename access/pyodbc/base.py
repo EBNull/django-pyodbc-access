@@ -80,9 +80,6 @@ class DatabaseFeatures(BaseDatabaseFeatures):
 class DatabaseWrapper(BaseDatabaseWrapper):
     drv_name = None
     driver_needs_utf8 = None
-    MARS_Connection = False
-    unicode_results = False
-    datefirst = 7
 
     # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
     #                   http://msdn2.microsoft.com/en-us/library/ms179886.aspx
@@ -119,11 +116,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def __init__(self, *args, **kwargs):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
-
-        if 'OPTIONS' in self.settings_dict:
-            self.MARS_Connection = self.settings_dict['OPTIONS'].get('MARS_Connection', False)
-            self.datefirst = self.settings_dict['OPTIONS'].get('datefirst', 7)
-            self.unicode_results = self.settings_dict['OPTIONS'].get('unicode_results', False)
+        
+        self._set_configuration(self.settings_dict)
+        
 
         self.features = DatabaseFeatures()
         self.ops = DatabaseOperations()
@@ -137,38 +132,85 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         self.connection = None
 
+    def _set_configuration(self, settings_dict):
+        sd = self._merge_settings(self._fixup_settings_dict(settings_dict))
+        if not sd['name']:
+            from django.core.exceptions import ImproperlyConfigured
+            raise ImproperlyConfigured('You need to specify NAME in your Django settings file.')
+        self.settings_dict = sd
+        
+    def _fixup_settings_dict(self, sd):
+        new_d = {}
+        for k, v in sd.iteritems():
+            if k.startswith('DATABASE_'):
+                k = k.partition('_')[2]
+            new_d[k] = v
+        return new_d
+        
+    def _parse_driver(self, driver):
+        shortcuts = {
+            None: self._guess_driver()
+            'access': DRIVER_ACCESS,
+            'sql': DRIVER_SQL_SERVER,
+            'freetds': DRIVER_FREETDS,
+        }
+        return shortcuts.get(driver, driver)
+
+    def _guess_driver(self):
+        if os.name == 'nt':
+            return DRIVER_SQL_SERVER
+        else:
+            return DRIVER_FREETDS
+            
+    def _merge_settings(self, settings_dict):
+        default_settings = dict(
+            #Standard Django settings first
+            USER=None,
+            PASSWORD=None,
+            #Host and port, if applicable
+            HOST=None,
+            PORT=None,
+            #Additional Details
+            NAME=None,
+            dsn=None,
+            host_is_server=False,
+            extra_params=[],
+            dbq=None
+        )
+        settings = dict(default_settings, **settings_dict)
+        settings['driver'] = self._parse_driver(settings.get('driver', None))
+        default_options = dict(
+            MARS_Connection=False,
+            datefirst=7,
+            unicode_results=False
+            autocommit=False,
+        )
+        settings['OPTIONS'] = dict(default_options, **settings.get('OPTIONS', {}))
+        rename = dict(
+            USER='user',
+            PASSWORD='password',
+            HOST='host',
+            PORT='port',
+            NAME='name',
+            OPTIONS='options',
+        )
+        for k, v in rename.iteritems():
+            settings[v] = settings[k]
+            del settings[k]
+        return cd
+    
     def _cursor(self):
         new_conn = False
         settings_dict = self.settings_dict
         db_str, user_str, passwd_str, port_str = None, None, None, None
-        if _DJANGO_VERSION >= 12:
-            options = settings_dict['OPTIONS']
-            if settings_dict['NAME']:
-                db_str = settings_dict['NAME']
-            if settings_dict['HOST']:
-                host_str = settings_dict['HOST']
-            else:
-                host_str = 'localhost'
-            if settings_dict['USER']:
-                user_str = settings_dict['USER']
-            if settings_dict['PASSWORD']:
-                passwd_str = settings_dict['PASSWORD']
-            if settings_dict['PORT']:
-                port_str = settings_dict['PORT']
-        else:
-            options = settings_dict['DATABASE_OPTIONS']
-            if settings_dict['DATABASE_NAME']:
-                db_str = settings_dict['DATABASE_NAME']
-            if settings_dict['DATABASE_HOST']:
-                host_str = settings_dict['DATABASE_HOST']
-            else:
-                host_str = 'localhost'
-            if settings_dict['DATABASE_USER']:
-                user_str = settings_dict['DATABASE_USER']
-            if settings_dict['DATABASE_PASSWORD']:
-                passwd_str = settings_dict['DATABASE_PASSWORD']
-            if settings_dict['DATABASE_PORT']:
-                port_str = settings_dict['DATABASE_PORT']
+
+        options = settings_dict['options']
+        db_str = settings_dict['name']
+        host_str = settings_dict['host'] or 'localhost'
+        user_str = settings_dict['user']
+        passwd_str = settings_dict['password']
+        port_str = settings_dict['port']
+
         if self.connection is None:
             new_conn = True
             if not db_str:
@@ -208,7 +250,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
             cstr_parts.append('DATABASE=%s' % db_str)
 
-            if self.MARS_Connection:
+            if options['MARS_Connection']:
                 cstr_parts.append('MARS_Connection=yes')
                 
             if 'extra_params' in options:
