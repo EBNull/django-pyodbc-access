@@ -1,6 +1,7 @@
 """
 MS SQL Server database backend for Django.
 """
+#Django 1.4 required
 
 try:
     import pyodbc as Database
@@ -20,22 +21,6 @@ if pyodbc_ver < (2, 0, 38, 9999):
 from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, BaseDatabaseValidation
 from django.db.backends.signals import connection_created
 from django.conf import settings
-from django import VERSION as DjangoVersion
-if DjangoVersion[:2] == (1,2) :
-    from django import get_version
-    version_str = get_version()
-    if 'SVN' in version_str and int(version_str.split('SVN-')[-1]) < 11952: # django trunk revision 11952 Added multiple database support.
-        _DJANGO_VERSION = 11
-    else:
-        _DJANGO_VERSION = 12
-elif DjangoVersion[:2] == (1,1):
-    _DJANGO_VERSION = 11
-elif DjangoVersion[:2] == (1,0):
-    _DJANGO_VERSION = 10
-elif DjangoVersion[0] == 1:
-    _DJANGO_VERSION = 13
-else:
-    _DJANGO_VERSION = 9
     
 from access.pyodbc.operations import DatabaseOperations
 from access.pyodbc.client import DatabaseClient
@@ -101,17 +86,13 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         
         self._set_configuration(self.settings_dict)
         
-
-        self.features = DatabaseFeatures()
+        self.features = DatabaseFeatures(self)
         self.ops = DatabaseOperations()
         self.client = DatabaseClient(self)
         self.creation = DatabaseCreation(self)
         self.introspection = DatabaseIntrospection(self)
-        if _DJANGO_VERSION >= 12:
-            self.validation = BaseDatabaseValidation(self)
-        else:
-            self.validation = BaseDatabaseValidation()
-
+        self.validation = BaseDatabaseValidation(self)
+        
         self.connection = None
 
     def _set_configuration(self, settings_dict):
