@@ -71,6 +71,11 @@ for old, new in deprecated:
 DatabaseError = Database.DatabaseError
 IntegrityError = Database.IntegrityError
 
+DRIVER_ACCESS = 'Microsoft Access Driver (*.mdb)'
+DRIVER_FREETDS = 'FreeTDS'
+DRIVER_SQL_SERVER = 'SQL Server'
+DRIVER_SQL_NATIVE_CLIENT = 'SQL Native Client'
+
 class DatabaseFeatures(BaseDatabaseFeatures):
     uses_custom_query_class = True
     can_use_chunked_reads = False
@@ -149,7 +154,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         
     def _parse_driver(self, driver):
         shortcuts = {
-            None: self._guess_driver()
+            None: self._guess_driver(),
             'access': DRIVER_ACCESS,
             'sql': DRIVER_SQL_SERVER,
             'freetds': DRIVER_FREETDS,
@@ -172,20 +177,21 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             PORT=None,
             #Additional Details
             NAME=None,
-            dsn=None,
             host_is_server=False,
             extra_params=[],
             dbq=None
         )
         settings = dict(default_settings, **settings_dict)
-        settings['driver'] = self._parse_driver(settings.get('driver', None))
         default_options = dict(
             MARS_Connection=False,
             datefirst=7,
-            unicode_results=False
+            unicode_results=False,
             autocommit=False,
+            dsn=None,
+            host_is_server=False,
         )
         settings['OPTIONS'] = dict(default_options, **settings.get('OPTIONS', {}))
+        settings['OPTIONS']['driver'] = self._parse_driver(settings['OPTIONS'].get('driver', None))
         rename = dict(
             USER='user',
             PASSWORD='password',
@@ -198,107 +204,90 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             settings[v] = settings[k]
             del settings[k]
         return cd
-    
+
+    def _get_connstring_data(self):
+        sd = self.settings_dict
+        cd = dict()
+            
+        if sd['options']['dsn']:
+            cd['DSN'] = sd['options']['dsn']
+        else:
+            cd['DRIVER'] = '{%s}'%(cd['options']['driver'])
+            if os.name == 'nt' or (cd['options']['driver'] == 'FreeTDS' and cd['options']['host_is_server']):
+                host = cd['host']
+                if cd['port']:
+                    host += ',%s'%(cd['port'])
+                    cd['SERVER'] = host
+                else:
+                    cd['SERVERNAME'] = host_str
+        if cd['user'] is not None:
+            cd['UID']=cd['user']
+        if cd['password'] is not None:
+            cd['PWD']=cd['password']
+        if cd['user'] is True:
+            if cd['options']['driver'] in (DRIVER_SQL_SERVER, DRIVER_SQL_NATIVE_CLIENT):
+                cd['Trusted_Connection'] = 'yes'
+            else:
+                cd['Integrated Security'] = 'SSPI'
+
+        cd['DATABASE'] = db_str
+
+        if sd['options']['MARS_Connection']:
+            cd['MARS_Connection']='yes'
+            
+        if sd['options']['extra_params']:
+            cd.update(sd['options']['extra_params'])
+
+        return cd
+
+    def _get_new_connection_kwargs(self):
+        z = dict(
+            autocommit = self.settings_dict['options']['autocommit'],
+        )
+        if self.unicode_results:
+            z['unicode_results'] = True
+        return z
+        
+    def _open_new_connection(self):
+        cstr = ';'.join(self._get_connstring_data())
+        kwargs = self._get_new_connection_kwargs()
+        conn = connection = Database.connect(connstr, **kwargs)
+        self._on_connection_created(conn)
+        return conn
+        
+    def _on_connection_created(self, conn):
+        return
+        # Set date format for the connection. Also, make sure Sunday is
+        # considered the first day of the week (to be consistent with the
+        # Django convention for the 'week_day' Django lookup) if the user
+        # hasn't told us otherwise
+        #cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST %s" % self.datefirst)
+        #if self.ops._get_sql_server_ver(self.connection) < 2005:
+        #    self.creation.data_types['TextField'] = 'ntext'
+
+        #if self.driver_needs_utf8 is None:
+        #    self.driver_needs_utf8 = True
+        #    self.drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
+        #    if self.drv_name in ('SQLSRV32.DLL', 'SQLNCLI.DLL', 'SQLNCLI10.DLL'):
+        #        self.driver_needs_utf8 = False
+
+            # http://msdn.microsoft.com/en-us/library/ms131686.aspx
+            #if self.ops._get_sql_server_ver(self.connection) >= 2005 and self.drv_name in ('SQLNCLI.DLL', 'SQLNCLI10.DLL') and self.MARS_Connection:
+                # How to to activate it: Add 'MARS_Connection': True
+                # to the DATABASE_OPTIONS dictionary setting
+                #self.features.can_use_chunked_reads = True
+
+        # FreeTDS can't execute some sql queries like CREATE DATABASE etc.
+        # in multi-statement, so we need to commit the above SQL sentence(s)
+        # to avoid this
+        #if self.drv_name.startswith('LIBTDSODBC') and not self.connection.autocommit:
+            #self.connection.commit()
+                
     def _cursor(self):
-        new_conn = False
-        settings_dict = self.settings_dict
-        db_str, user_str, passwd_str, port_str = None, None, None, None
-
-        options = settings_dict['options']
-        db_str = settings_dict['name']
-        host_str = settings_dict['host'] or 'localhost'
-        user_str = settings_dict['user']
-        passwd_str = settings_dict['password']
-        port_str = settings_dict['port']
-
         if self.connection is None:
-            new_conn = True
-            if not db_str:
-                from django.core.exceptions import ImproperlyConfigured
-                raise ImproperlyConfigured('You need to specify NAME in your Django settings file.')
-
-            cstr_parts = []
-            if 'driver' in options:
-                driver = options['driver']
-            else:
-                if os.name == 'nt':
-                    driver = 'SQL Server'
-                else:
-                    driver = 'FreeTDS'
-
-            if 'dsn' in options:
-                cstr_parts.append('DSN=%s' % options['dsn'])
-            else:
-                # Only append DRIVER if DATABASE_ODBC_DSN hasn't been set
-                cstr_parts.append('DRIVER={%s}' % driver)
-                
-                if os.name == 'nt' or driver == 'FreeTDS' and \
-                        options.get('host_is_server', False):
-                    if port_str:
-                        host_str += ',%s' % port_str
-                    cstr_parts.append('SERVER=%s' % host_str)
-                else:
-                    cstr_parts.append('SERVERNAME=%s' % host_str)
-
-            if user_str:
-                cstr_parts.append('UID=%s;PWD=%s' % (user_str, passwd_str))
-            else:
-                if driver in ('SQL Server', 'SQL Native Client'):
-                    cstr_parts.append('Trusted_Connection=yes')
-                else:
-                    cstr_parts.append('Integrated Security=SSPI')
-
-            cstr_parts.append('DATABASE=%s' % db_str)
-
-            if options['MARS_Connection']:
-                cstr_parts.append('MARS_Connection=yes')
-                
-            if 'extra_params' in options:
-                cstr_parts.append(options['extra_params'])
-
-            connstr = ';'.join(cstr_parts)
-            autocommit = options.get('autocommit', False)
-            if self.unicode_results:
-                self.connection = Database.connect(#'Driver={Microsoft Access Driver (*.mdb)};DBQ=Y:/Gifts/Gifts.mdb;', \
-						#HACK: this replaces the hard-coded connection string above.\
-						connstr,  \
-                        autocommit=autocommit, \
-                        unicode_results='True')
-            else:
-                self.connection = Database.connect(#'Driver={Microsoft Access Driver (*.mdb)};DBQ=Y:/Gifts/Gifts.mdb;', \
-				        #HACK: this replaces the hard-coded connection string above\
-						connstr, \
-                        autocommit=autocommit)
+            self.connection = self._open_new_connection()
             connection_created.send(sender=self.__class__)
-
         cursor = self.connection.cursor()
-        #if new_conn:
-            # Set date format for the connection. Also, make sure Sunday is
-            # considered the first day of the week (to be consistent with the
-            # Django convention for the 'week_day' Django lookup) if the user
-            # hasn't told us otherwise
-            #cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST %s" % self.datefirst)
-            #if self.ops._get_sql_server_ver(self.connection) < 2005:
-            #    self.creation.data_types['TextField'] = 'ntext'
-
-            #if self.driver_needs_utf8 is None:
-            #    self.driver_needs_utf8 = True
-            #    self.drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
-            #    if self.drv_name in ('SQLSRV32.DLL', 'SQLNCLI.DLL', 'SQLNCLI10.DLL'):
-            #        self.driver_needs_utf8 = False
-
-                # http://msdn.microsoft.com/en-us/library/ms131686.aspx
-                #if self.ops._get_sql_server_ver(self.connection) >= 2005 and self.drv_name in ('SQLNCLI.DLL', 'SQLNCLI10.DLL') and self.MARS_Connection:
-                    # How to to activate it: Add 'MARS_Connection': True
-                    # to the DATABASE_OPTIONS dictionary setting
-                    #self.features.can_use_chunked_reads = True
-
-            # FreeTDS can't execute some sql queries like CREATE DATABASE etc.
-            # in multi-statement, so we need to commit the above SQL sentence(s)
-            # to avoid this
-            #if self.drv_name.startswith('LIBTDSODBC') and not self.connection.autocommit:
-                #self.connection.commit()
-
         return CursorWrapper(cursor, self.driver_needs_utf8)
 
 
