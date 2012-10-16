@@ -44,30 +44,6 @@ from access.pyodbc.introspection import DatabaseIntrospection
 import os
 import warnings
 
-warnings.filterwarnings('error', 'The DATABASE_ODBC.+ is deprecated', DeprecationWarning, __name__, 0)
-
-collation = 'Latin1_General_CI_AS'
-if hasattr(settings, 'DATABASE_COLLATION'):
-    warnings.warn(
-        "The DATABASE_COLLATION setting is going to be deprecated, use DATABASE_OPTIONS['collation'] instead.",
-        DeprecationWarning
-    )
-    collation = settings.DATABASE_COLLATION
-elif 'collation' in settings.DATABASE_OPTIONS:
-    collation = settings.DATABASE_OPTIONS['collation']
-
-deprecated = (
-    ('DATABASE_ODBC_DRIVER', 'driver'),
-    ('DATABASE_ODBC_DSN', 'dsn'),
-    ('DATABASE_ODBC_EXTRA_PARAMS', 'extra_params'),
-)
-for old, new in deprecated:
-    if hasattr(settings, old):
-        warnings.warn(
-            "The %s setting is deprecated, use DATABASE_OPTIONS['%s'] instead." % (old, new),
-            DeprecationWarning
-        )
-
 DatabaseError = Database.DatabaseError
 IntegrityError = Database.IntegrityError
 
@@ -93,31 +69,32 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     #   CONTAINS:       http://msdn2.microsoft.com/en-us/library/ms187787.aspx
     #   FREETEXT:       http://msdn2.microsoft.com/en-us/library/ms176078.aspx
 
-    operators = {
-        # Since '=' is used not only for string comparision there is no way
-        # to make it case (in)sensitive. It will simply fallback to the
-        # database collation.
-        'exact': '= %s',
-        'iexact': "= UCASE(%s)",
-        'contains': "LIKE %s ", #ESCAPE '\\' COLLATE " + collation,
-        'icontains': "LIKE UCASE(%s) ", #ESCAPE '\\' COLLATE "+ collation,
-        'gt': '> %s',
-        'gte': '>= %s',
-        'lt': '< %s',
-        'lte': '<= %s',
-        'startswith': "LIKE %s ", #ESCAPE '\\' COLLATE " + collation,
-        'endswith': "LIKE %s ", #ESCAPE '\\' COLLATE " + collation,
-        'istartswith': "LIKE UCASE(%s) ", #ESCAPE '\\' COLLATE " + collation,
-        'iendswith': "LIKE UCASE(%s) ", #ESCAPE '\\' COLLATE " + collation,
+    def _setup_operators(self, sd):
+        self.operators = {
+            # Since '=' is used not only for string comparision there is no way
+            # to make it case (in)sensitive. It will simply fallback to the
+            # database collation.
+            'exact': '= %s',
+            'iexact': "= UCASE(%s)",
+            'contains': "LIKE %s ", #ESCAPE '\\' COLLATE " + collation,
+            'icontains': "LIKE UCASE(%s) ", #ESCAPE '\\' COLLATE "+ collation,
+            'gt': '> %s',
+            'gte': '>= %s',
+            'lt': '< %s',
+            'lte': '<= %s',
+            'startswith': "LIKE %s ", #ESCAPE '\\' COLLATE " + collation,
+            'endswith': "LIKE %s ", #ESCAPE '\\' COLLATE " + collation,
+            'istartswith': "LIKE UCASE(%s) ", #ESCAPE '\\' COLLATE " + collation,
+            'iendswith': "LIKE UCASE(%s) ", #ESCAPE '\\' COLLATE " + collation,
 
-        # TODO: remove, keep native T-SQL LIKE wildcards support
-        # or use a "compatibility layer" and replace '*' with '%'
-        # and '.' with '_'
-        'regex': 'LIKE %s COLLATE ' + collation,
-        'iregex': 'LIKE %s COLLATE ' + collation,
+            # TODO: remove, keep native T-SQL LIKE wildcards support
+            # or use a "compatibility layer" and replace '*' with '%'
+            # and '.' with '_'
+            'regex': 'LIKE %s COLLATE ' + sd['options']['collation'],
+            'iregex': 'LIKE %s COLLATE ' + sd['options']['collation'],
 
-        # TODO: freetext, full-text contains...
-    }
+            # TODO: freetext, full-text contains...
+        }
 
     def __init__(self, *args, **kwargs):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
@@ -142,6 +119,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if not sd['name']:
             from django.core.exceptions import ImproperlyConfigured
             raise ImproperlyConfigured('You need to specify NAME in your Django settings file.')
+        self._setup_operators(sd)
         self.settings_dict = sd
         
     def _fixup_settings_dict(self, sd):
@@ -189,6 +167,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             autocommit=False,
             dsn=None,
             host_is_server=False,
+            collation='Latin1_General_CI_AS',
         )
         settings['OPTIONS'] = dict(default_options, **settings.get('OPTIONS', {}))
         settings['OPTIONS']['driver'] = self._parse_driver(settings['OPTIONS'].get('driver', None))
@@ -203,7 +182,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         for k, v in rename.iteritems():
             settings[v] = settings[k]
             del settings[k]
-        return cd
+        return settings
 
     def _get_connstring_data(self):
         sd = self.settings_dict
