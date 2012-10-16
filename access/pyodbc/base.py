@@ -249,7 +249,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         return z
         
     def _open_new_connection(self):
-        cstr = ';'.join(self._get_connstring_data())
+        cstr = ';'.join(('%s=%s'%(k, v) for k, v in self._get_connstring_data().iteritems()))
         kwargs = self._get_new_connection_kwargs()
         conn = connection = Database.connect(connstr, **kwargs)
         self._on_connection_created(conn)
