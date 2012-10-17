@@ -121,11 +121,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         return shortcuts.get(driver, driver)
 
     def _guess_driver(self):
-        if os.name == 'nt':
-            return DRIVER_SQL_SERVER
-        else:
-            return DRIVER_FREETDS
-            
+        return DRIVER_ACCESS
+
     def _merge_settings(self, settings_dict):
         default_settings = dict(
             #Standard Django settings first
