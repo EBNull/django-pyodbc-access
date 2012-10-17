@@ -9,6 +9,37 @@ Why?!?!
 
 I've run across the problem of having data stuck in a legacy MS Access system more than once. I started a project that *needed* to support some legacy ASP code which was reading/writing to an Access DB, and simultaneously implement complex new features. This was my solution.
 
+Modifications
+=============
+This project was originally cloned via hg clone https://bitbucket.org/jkafader/django-pyodbc-access/.
+When I started to use it, it didn't work out of the box for MS Access. This repository changes the module to work specificly with
+MS Access, without trying to maintain compatability with related technologies (like MS SQL Server).
+
+Known Issues
+============
+- LIMIT queries are plain disabled. If you want to fix this, see base.py.
+- Access is bad at this (tm). For example, a query that uses __in can fail if given too many ids. Using a join worked.
+Unknown Issues
+==============
+- Expect a lot
+
+Known Working
+=============
+- Basic info retreival
+-- (Model.objects.all())
+- Foreign Keys
+-- ModelInstance.related_object.field
+-- ModelInstance.related_object_set.all()
+- Simple Joins
+-- Model.objects.exclude(rel__in=RelObj.objects.all())
+
+Changes from upstream
+=====================
+- Dropped support for anything except MDB files
+- Dropped support for anything < Django 1.4
+- Default driver is MS Access
+- Specification of filenames in DATABASE config instead of a system DSN
+
 How to use it
 =============
 
@@ -22,14 +53,9 @@ download and install from source or::
 2. Clone the repository and add it to your python path
 ------------------------------------------------------
 
-clone this repository (hg clone https://bitbucket.org/jkafader/django-pyodbc-access/) and copy (or add) the "access" directory to your python path.
+clone this repository and copy (or add) the "access" directory to your python path.
 
-3. Set up a System DSN for your Access/Jet Database
----------------------------------------------------
-
-Google "setup system dsn". I'm sure you'll find a guide that will help.
-
-4. Edit your settings.py file for your project
+3. Edit your settings.py file for your project
 ----------------------------------------------
 
 change your DATABASES settings::
@@ -37,13 +63,11 @@ change your DATABASES settings::
     DATABASES = {
         'default': {
             'ENGINE': 'access.pyodbc',
-            'NAME': 'YourDatabase' # this MUST correspond to a system DSN.
-            'OPTIONS': {
-	        'driver': 'Microsoft Access Driver (*.mdb)',
-                'dsn': 'YourDatabase'
-            }
+            'NAME': 'mydatabase.mdb',
+            'USER': 'admin',
+            'PASSWORD': '',
+        }
     }
-
 
 5. Introspect your DB
 ---------------------
@@ -54,8 +78,17 @@ Presumably, you are working on a legacy project (why else use Access?). Use::
 
 to introspect your database and create a new models.py
 
+Alternatively, add 'access' to your INSTALLED_APPS and introspect any random MDB:
 
-Known Issues
+    python manage.py inspect_mdb C:\Path\To\database.mdb
+
+Before doing these steps, if your db has 'relations', you may want to grant permission to admin to view them.
+This will let the code detect foreign keys during introspection. To do this, you need to turn on 'Show System Objects' and grant
+'Read Data' to admin on 'MSysRelationships'. Doing this varies based on MS Access version.
+
+
+Known Access Issues
 ============
 
 * MS Access limits queries to 128 columns. This is a hard limit imposed by the Jet backend. This should hopefully be enough for simple projects, but very complex JOINs may have issues.
+* MS Access limits the number of entries in a IN clause
