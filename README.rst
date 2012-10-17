@@ -85,7 +85,7 @@ Presumably, you are working on a legacy project (why else use Access?). Use::
 
 to introspect your database and create a new models.py
 
-Alternatively, add 'access' to your INSTALLED_APPS and introspect any random MDB:
+Alternatively, add 'access' to your INSTALLED_APPS and introspect any random MDB::
 
     python manage.py inspect_mdb C:\Path\To\database.mdb
 
