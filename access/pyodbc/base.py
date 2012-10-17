@@ -87,7 +87,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         self._set_configuration(self.settings_dict)
         
         self.features = DatabaseFeatures(self)
-        self.ops = DatabaseOperations()
+        self.ops = DatabaseOperations(self)
         self.client = DatabaseClient(self)
         self.creation = DatabaseCreation(self)
         self.introspection = DatabaseIntrospection(self)
@@ -134,11 +134,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             #Host and port, if applicable
             HOST=None,
             PORT=None,
-            #Additional Details
+            #Database name, if applicable
             NAME=None,
-            host_is_server=False,
-            extra_params=[],
-            dbq=None
         )
         settings = dict(default_settings, **settings_dict)
         default_options = dict(
@@ -149,6 +146,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             dsn=None,
             host_is_server=False,
             collation='Latin1_General_CI_AS',
+            extra_params={},
         )
         settings['OPTIONS'] = dict(default_options, **settings.get('OPTIONS', {}))
         settings['OPTIONS']['driver'] = self._parse_driver(settings['OPTIONS'].get('driver', None))
@@ -172,25 +170,30 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if sd['options']['dsn']:
             cd['DSN'] = sd['options']['dsn']
         else:
-            cd['DRIVER'] = '{%s}'%(cd['options']['driver'])
-            if os.name == 'nt' or (cd['options']['driver'] == 'FreeTDS' and cd['options']['host_is_server']):
-                host = cd['host']
-                if cd['port']:
-                    host += ',%s'%(cd['port'])
-                    cd['SERVER'] = host
-                else:
-                    cd['SERVERNAME'] = host_str
-        if cd['user'] is not None:
-            cd['UID']=cd['user']
-        if cd['password'] is not None:
-            cd['PWD']=cd['password']
-        if cd['user'] is True:
-            if cd['options']['driver'] in (DRIVER_SQL_SERVER, DRIVER_SQL_NATIVE_CLIENT):
+            cd['DRIVER'] = '{%s}'%(sd['options']['driver'])
+            if sd['options']['driver'] == DRIVER_ACCESS:
+                #Access can't do network, so NAME should be the filename
+                cd['DBQ'] = sd['name']
+            else:
+                if os.name == 'nt' or (sd['options']['driver'] == 'FreeTDS' and sd['options']['host_is_server']):
+                    host = sd['host']
+                    if sd['port']:
+                        host += ',%s'%(sd['port'])
+                        cd['SERVER'] = host
+                    else:
+                        cd['SERVERNAME'] = host
+        if sd['user'] is not None:
+            cd['UID']=sd['user']
+        if sd['password'] is not None:
+            cd['PWD']=sd['password']
+        if sd['user'] is True:
+            if sd['options']['driver'] in (DRIVER_SQL_SERVER, DRIVER_SQL_NATIVE_CLIENT):
                 cd['Trusted_Connection'] = 'yes'
             else:
                 cd['Integrated Security'] = 'SSPI'
 
-        cd['DATABASE'] = db_str
+        if sd['options']['driver'] != DRIVER_ACCESS:
+            cd['DATABASE'] = sd['name']
 
         if sd['options']['MARS_Connection']:
             cd['MARS_Connection']='yes'
@@ -204,14 +207,14 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         z = dict(
             autocommit = self.settings_dict['options']['autocommit'],
         )
-        if self.unicode_results:
+        if self.settings_dict['options']['unicode_results']:
             z['unicode_results'] = True
         return z
         
     def _open_new_connection(self):
-        cstr = ';'.join(('%s=%s'%(k, v) for k, v in self._get_connstring_data().iteritems()))
+        connstr = ';'.join(('%s=%s'%(k, v) for k, v in self._get_connstring_data().iteritems()))
         kwargs = self._get_new_connection_kwargs()
-        conn = connection = Database.connect(connstr, **kwargs)
+        conn = Database.connect(connstr, **kwargs)
         self._on_connection_created(conn)
         return conn
         

@@ -6,8 +6,8 @@ import decimal
 
 class DatabaseOperations(BaseDatabaseOperations):
     compiler_module = "access.pyodbc.compiler"
-    def __init__(self):
-        super(DatabaseOperations, self).__init__()
+    def __init__(self, connection):
+        super(DatabaseOperations, self).__init__(connection)
         self._ss_ver = None
 
     def _get_sql_server_ver(self, connection=None):
@@ -122,9 +122,9 @@ class DatabaseOperations(BaseDatabaseOperations):
         Returns a quoted version of the given table, index or column name. Does
         not quote the given name if it's already been quoted.
         """
-        if name.startswith('`') and name.endswith('`'):
+        if name.startswith('[') and name.endswith(']'):
             return name # Quoting once is enough.
-        return '`%s`' % name
+        return '[%s]' % name
 
     def random_function_sql(self):
         """

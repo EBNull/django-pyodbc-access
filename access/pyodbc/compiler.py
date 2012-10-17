@@ -263,7 +263,7 @@ class SQLCompiler(compiler.SQLCompiler):
                            qn2(lhs_col), qn(alias), qn2(col)))
             else:
                 connector = not first and ', ' or ''
-                result.append('%s%s%s%s)' % (connector, "("*count_of_open_parens, qn(name), alias_str))
+                result.append('%s%s%s%s' % (connector, "("*(count_of_open_parens - 1), qn(name), alias_str))
             first = False
         for t in self.query.extra_tables:
             alias, unused = self.query.table_alias(t)
@@ -286,7 +286,7 @@ class SQLCompiler(compiler.SQLCompiler):
         """
         # The do_offset flag indicates whether we need to construct
         # the SQL needed to use limit/offset w/SQL Server.
-        do_offset = with_limits and (self.query.high_mark is not None or self.query.low_mark != 0)
+        do_offset = False #with_limits and (self.query.high_mark is not None or self.query.low_mark != 0)
 
         # If no offsets, just return the result of the base class
         # `as_sql`.
