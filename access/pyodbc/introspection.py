@@ -1,5 +1,7 @@
 from django.db.backends import BaseDatabaseIntrospection
 import pyodbc as Database
+import logging
+log = logging.getLogger(__name__)
 
 SQL_AUTOFIELD = -777555
 
@@ -126,7 +128,18 @@ WHERE a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
 	    # add read design and read data permissions -- OK
 		# in the access GUI.
 		# in the meantime, I'm going to return an empty dict for my purposes.
-        return {}
+        #TODO: Below is valid for Access
+        sql = "SELECT [szColumn], [szObject], [szReferencedColumn], [szReferencedObject], [szRelationship] FROM MSysRelationships WHERE [szObject] = %s;"
+        try:
+            cursor.execute(sql, (table_name, ))
+        except Exception as e:
+            log.exception("You tried to examine the relations on an MDB file. Make sure you have permission! (In Access, grant permission to MSysRelationships")
+            return {}
+        return dict([(
+            table_index[item[0]],
+            (self._name_to_index(cursor, item[3])[item[2]], item[3]))
+            for item in cursor.fetchall()
+        ])
 
     def get_indexes(self, cursor, table_name):
         """
