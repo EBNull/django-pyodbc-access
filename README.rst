@@ -7,7 +7,7 @@ This project implements a MS Access / MS Jet backend for django, so you can use 
 Why?!?!
 =======
 
-I've run across the problem of having data stuck in a legacy MS Access system more than once. I started a project that *needed* to support some legacy ASP code which was reading/writing to an Access DB, and simultaneously implement complex new features. This was my solution.
+Having data stuck in a legacy MS Access system is terrible, but a serious endemic. An immediate migration away is not always feasable due to legacy software.
 
 Modifications
 =============
@@ -19,6 +19,7 @@ Known Issues
 ============
 - LIMIT queries are plain disabled. If you want to fix this, see base.py.
 - Access is bad at this (tm). For example, a query that uses __in can fail if given too many ids. Using a join worked.
+
 Unknown Issues
 ==============
 - Expect a lot
@@ -26,12 +27,18 @@ Unknown Issues
 Known Working
 =============
 - Basic info retreival
--- (Model.objects.all())
+
+  - Model.objects.all()
+  
 - Foreign Keys
--- ModelInstance.related_object.field
--- ModelInstance.related_object_set.all()
+
+  - ModelInstance.related_object.field
+  
+  - ModelInstance.related_object_set.all()
+  
 - Simple Joins
--- Model.objects.exclude(rel__in=RelObj.objects.all())
+
+  - Model.objects.exclude(rel__in=RelObj.objects.all())
 
 Changes from upstream
 =====================
