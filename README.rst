@@ -7,7 +7,7 @@ This project implements a MS Access / MS Jet backend for django, so you can use 
 Why?!?!
 =======
 
-Having data stuck in a legacy MS Access system is terrible, but a serious endemic. An immediate migration away is not always feasable due to legacy software.
+Having data stuck in a legacy MS Access system is terrible, but a serious epidemic. An immediate migration away is not always feasable due to legacy software.
 
 Modifications
 =============
